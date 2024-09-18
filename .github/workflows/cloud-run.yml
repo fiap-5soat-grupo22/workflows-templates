@@ -1,0 +1,97 @@
+name: 'Cloud Run Template'
+on:
+  workflow_call:
+    inputs:
+      tenant:
+        required: true
+        type: string
+      config:
+        required: true
+        type: string
+      service:
+        required: true
+        type: string
+permissions:
+  id-token: write
+  contents: write 
+jobs:
+  build:
+    if: contains(fromJSON('["refs/heads/main", "refs/heads/release"]'), github.ref)
+    name: 'Build & Deploy'
+    runs-on: ubuntu-latest
+    environment: ${{ fromJSON(inputs.config).name }}
+    env: 
+      TENANT: ${{ inputs.tenant }}
+      ENV_NAME: ${{ fromJSON(inputs.config).name }}
+      ENV_ALIAS: ${{ fromJSON(inputs.config).env_alias }}
+      SHARED_PROJECT_NUMBER: ${{ fromJSON(inputs.config).shared_project_number }}
+      PROJECT_ID: ${{ fromJSON(inputs.config).project_id }}
+      PROJECT_NUMBER: ${{ fromJSON(inputs.config).project_number }}
+      WORKLOAD_IDENTITY_PROVIDER: ${{ fromJSON(inputs.config).workload_identity_provider }}
+      SERVICE: ${{ fromJSON(inputs.service).service }}
+      LOCATION: ${{ fromJSON(inputs.service).location }}
+      PORT: ${{ fromJSON(inputs.service).port }}
+      MIN_SCALE: ${{ fromJSON(inputs.service).min_scale }}
+      MAX_SCALE: ${{ fromJSON(inputs.service).max_scale }}
+      EXECUTION_ENVIRONMENT: ${{ fromJSON(inputs.service).execution_environment }}
+      INGRESS: ${{ fromJSON(inputs.service).ingress }}
+      STARTUP_CPU_BOOST: ${{ fromJSON(inputs.service).startup_cpu_boost }}
+      CONTAINER_CONCURRENCY: ${{ fromJSON(inputs.service).container_concurrency }}
+      TIMEOUT_SECONDS: ${{ fromJSON(inputs.service).timeout_seconds }}
+      CPU: ${{ fromJSON(inputs.service).cpu }}
+      MEMORY: ${{ fromJSON(inputs.service).memory }}
+      ENVIRONMENT_VARIABLES: ${{ fromJSON(inputs.service).environment_variables }}
+      SECRETS: ${{ fromJSON(inputs.service).secrets }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      
+    - name: 'Authenticate to Google Cloud'
+      uses: 'google-github-actions/auth@v1' 
+      with:
+        audience: https://iam.googleapis.com/projects/${{ env.SHARED_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github/providers/${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+        create_credentials_file: true 
+        workload_identity_provider: 'projects/${{ env.SHARED_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github/providers/${{ env.WORKLOAD_IDENTITY_PROVIDER }}'
+        service_account: 'github-workflow-terraform@${{ env.PROJECT_ID }}.iam.gserviceaccount.com'
+
+    - name: Deploy to Cloud Run
+      id: deploy
+      run: | 
+        gcloud run deploy ${{ env.SERVICE }} --quiet \
+        --source ./ \
+        --region ${{ env.LOCATION }} \
+        --project ${{ env.PROJECT_ID }} \
+        --platform managed \
+        --port ${{ env.PORT }} \
+        --vpc-connector serverless-connector \
+        --vpc-egress all-traffic \
+        --format json \
+        --cpu ${{ env.CPU }} \
+        --cpu-boost \
+        --memory ${{ env.MEMORY}} \
+        --ingress ${{ env.INGRESS }} \
+        --min-instances ${{ env.MIN_SCALE }} \
+        --max-instances ${{ env.MAX_SCALE }} \
+        --concurrency ${{ env.CONTAINER_CONCURRENCY }} \
+        --set-env-vars ENVIRONMENT=${{ env.EXECUTION_ENVIRONMENT }} \
+        --set-env-vars PROJECT_ID=${{ env.PROJECT_ID }} \
+        --set-env-vars PROJECT_NUMBER=${{ env.PROJECT_NUMBER }} \
+        --set-env-vars LOCATION=${{ env.LOCATION }} \
+        --set-env-vars TENANT=${{ env.TENANT }} \
+        --set-env-vars GITHUB_SHA=${{ github.sha }} \
+        --set-env-vars GITHUB_RUN_ID=${{ github.run_id }} \
+        --set-env-vars ${{ env.ENVIRONMENT_VARIABLES }} \
+        --set-secrets="${{ env.SECRETS }}"
+   
+    - name: 'Allow Unauthorized'
+      run: |
+        gcloud run services add-iam-policy-binding ${{ env.SERVICE }} \
+        --region=${{ env.LOCATION }} \
+        --member="allUsers" \
+        --role="roles/run.invoker" 
+
+    - name: Show Output
+      run: echo ${{ steps.deploy.outputs }}
