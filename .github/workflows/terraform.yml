@@ -1,0 +1,61 @@
+name: 'Terraform tennat core'
+on:
+  workflow_call:
+    inputs:
+      tenant:
+        required: true
+        type: string
+      config:
+        required: true
+        type: string
+permissions:
+  id-token: write
+  contents: write 
+jobs:
+  terraform:
+    name: 'Terraform'
+    runs-on: ubuntu-latest
+    environment: ${{ fromJSON(inputs.config).name }}
+    env: 
+      TENANT: ${{ inputs.tenant }}
+      ENV_NAME: ${{ fromJSON(inputs.config).name }}
+      ENV_ALIAS: ${{ fromJSON(inputs.config).env_alias }}
+      PROJECT_ID: ${{ fromJSON(inputs.config).project_id }}
+      PROJECT_NUMBER: ${{ fromJSON(inputs.config).project_number }}
+      SHARED_PROJECT_NUMBER: ${{ fromJSON(inputs.config).shared_project_number }}
+      WORKLOAD_IDENTITY_PROVIDER: ${{ fromJSON(inputs.config).workload_identity_provider }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      
+    - name: 'Authenticate to Google Cloud'
+      uses: 'google-github-actions/auth@v1' 
+      with:
+        audience: https://iam.googleapis.com/projects/${{ env.SHARED_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github/providers/${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+        create_credentials_file: true 
+        workload_identity_provider: 'projects/${{ env.SHARED_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github/providers/${{ env.WORKLOAD_IDENTITY_PROVIDER }}'
+        service_account: 'github-workflow-terraform@${{ env.PROJECT_ID }}.iam.gserviceaccount.com'
+
+    # Install the latest version of Terraform CLI and configure the Terraform CLI configuration file with a Terraform Cloud user API token
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v1
+
+    # Initialize a new or existing Terraform working directory by creating initial files, loading any remote state, downloading modules, etc.
+    - name: Terraform Init
+      run: terraform init --backend-config=.config/${{ env.TENANT }}/backend.hcl   
+
+    # Checks that all Terraform configuration files adhere to a canonical format
+    - name: Terraform Format
+      run: terraform fmt -check
+
+    # Generates an execution plan for Terraform
+    - name: Terraform Plan
+      run: terraform plan -var-file .config/${{ env.TENANT }}/variables.auto.tfvars -out ".tfplan" -input=false
+
+      # On push to "main", build or change infrastructure according to Terraform configuration files
+      # Note: It is recommended to set up a required "strict" status check in your repository for "Terraform Cloud". See the documentation on "strict" required status checks for more information: https://help.github.com/en/github/administering-a-repository/types-of-required-status-checks
+    - name: Terraform Apply
+      run: terraform apply .tfplan
