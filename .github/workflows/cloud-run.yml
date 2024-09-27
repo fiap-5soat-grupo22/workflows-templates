@@ -107,12 +107,12 @@ jobs:
         --set-env-vars ${{ env.ENVIRONMENT_VARIABLES }} \
         --set-secrets="${{ env.SECRETS }}"
    
-    - name: 'Allow Unauthorized'
-      run: |
-        gcloud run services add-iam-policy-binding ${{ env.SERVICE }} \
-        --region=${{ env.LOCATION }} \
-        --member="allUsers" \
-        --role="roles/run.invoker" 
+    # - name: 'Allow Unauthorized'
+    #   run: |
+    #     gcloud run services add-iam-policy-binding ${{ env.SERVICE }} \
+    #     --region=${{ env.LOCATION }} \
+    #     --member="allUsers" \
+    #     --role="roles/run.invoker" 
 
     - name: Show Output
       run: echo ${{ steps.deploy.outputs }}
