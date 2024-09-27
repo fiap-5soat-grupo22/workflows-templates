@@ -16,8 +16,30 @@ permissions:
   contents: write 
 jobs:
   build:
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        node-version: [20]
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        version: 9
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'pnpm'
+    - name: Install dependencies
+      run: pnpm install
+    - name: Qualidade de código
+      run: pnpm lint
+    - name: Testes
+      run: pnpm test
+  deploy:
     if: contains(fromJSON('["refs/heads/main", "refs/heads/release"]'), github.ref)
-    name: 'Build & Deploy'
+    name: 'Deploy'
     runs-on: ubuntu-latest
     environment: ${{ fromJSON(inputs.config).name }}
     env: 
@@ -55,8 +77,7 @@ jobs:
         audience: https://iam.googleapis.com/projects/${{ env.SHARED_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github/providers/${{ env.WORKLOAD_IDENTITY_PROVIDER }}
         create_credentials_file: true 
         workload_identity_provider: 'projects/${{ env.SHARED_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github/providers/${{ env.WORKLOAD_IDENTITY_PROVIDER }}'
-        service_account: 'github-workflow-terraform@${{ env.PROJECT_ID }}.iam.gserviceaccount.com'
-
+        service_account: 'github-workflow-terraform@${{ env.PROJECT_ID }}.iam.gserviceaccount.com'      
     - name: Deploy to Cloud Run
       id: deploy
       run: | 
